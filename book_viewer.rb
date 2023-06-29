@@ -1,13 +1,21 @@
 require "sinatra"
-require "sinatra/reloader" if development?
+require "sinatra/reloader"
 require "tilt/erubis"
 
 before do
   @contents = File.readlines("data/toc.txt")
 end
 
-not_found do
-  redirect "/"
+helpers do
+  def in_paragraphs(text)
+    text.split("\n\n").each_with_index.map do |paragraph, idx|
+      "<p id='#{idx}'>#{paragraph}</p>"
+    end.join
+  end
+
+  def apply_strong_tags(text, query)
+    text.gsub(query, "<strong>#{query}</strong>")
+  end
 end
 
 get "/" do
@@ -17,60 +25,45 @@ end
 
 get "/chapters/:number" do
   number = params[:number].to_i
-  
   chapter_name = @contents[number - 1]
-  @title = "Chapter #{number}: #{chapter_name}"
 
-  redirect "/" unless (1..@contents.size).cover?(number) 
-  
+  redirect "/" unless (1..@contents.size).cover?(number)
+
+  @title = "Chapter #{number}: #{chapter_name }"
   @chapter = File.read("data/chp#{number}.txt")
-  
-  erb :chapter, layout: :layout
+
+  erb :chapter
 end
 
 get "/search" do
-  @results = matching_chapters(params[:query])
+  @results = find_contents(params[:query])
   erb :search
 end
 
-helpers do
-  def in_paragraphs(text)
-    text.split("\n\n").each_with_index.map do |paragraph, idx|
-      "<p id=paragraph#{idx}>#{paragraph}</p/>"
-    end.join
-  end
-
-  def make_bold(text, query)
-    text.gsub(params[:query], "<strong>#{params[:query]}</strong>")
-  end
+not_found do
+  redirect "/"
 end
 
-def matching_chapters(query)
-  results = []
-  return results if query.nil? || query.strip.empty?
+def find_contents(query)
+  return nil if query.nil? || query.strip.empty?
 
-  # (1..@contents.size).each do |number|
-  #   name = @contents[number - 1]
-  #   content = File.read("data/chp#{number}.txt")
-  #   result << { name: name, number: number } if content.include?(query)
-  # end
-
-  each_chapter do |number, name, contents|
-    matches = {}
-    contents.split("\n\n").each_with_index do |paragraph, idx|
-      matches[idx] = paragraph if paragraph.include?(query)
+  (1..@contents.size).each_with_object([]) do |number, result|
+    chapter = File.read("data/chp#{number}.txt")
+    if chapter.include?(query)
+      paragraphs = find_paragraphs(chapter, query)
+      result << { number: number, name: @contents[number - 1], matches: paragraphs }
     end
-
-    results << { name: name, number: number, paragraphs: matches } if matches.any?
   end
-
-  results
 end
 
-def each_chapter
-  (1..@contents.size).each do |number|
-    name = @contents[number - 1]
-    contents = File.read("data/chp#{number}.txt")
-    yield number, name, contents
+def find_paragraphs(chapter, query)
+  result = []
+  
+  chapter.split("\n\n").each_with_index do |paragraph, idx|
+    if paragraph.include?(query)
+      result << { paragraph: paragraph, idx: idx }
+    end
   end
+
+  result
 end
